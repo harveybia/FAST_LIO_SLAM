@@ -25,15 +25,15 @@ color_table_len = color_table.shape[0]
 # User only consider this block
 ##########################
 
-data_dir = "/home/user/Documents/catkin2021/catkin_fastlio2/data/" # should end with / 
-scan_idx_range_to_stack = [0, 200] # if you want a whole map, use [0, len(scan_files)]
+data_dir = "/home/haowensh/Desktop/catkin_fastlio_slam/data_downtown_thermal/" # should end with / 
+
 node_skip = 1
 
 num_points_in_a_scan = 150000 # for reservation (save faster) // e.g., use 150000 for 128 ray lidars, 100000 for 64 ray lidars, 30000 for 16 ray lidars, if error occured, use the larger value.
 
 is_live_vis = False # recommend to use false 
 is_o3d_vis = True
-intensity_color_max = 200
+intensity_color_max = 80
 
 is_near_removal = True
 thres_near_removal = 2 # meter (to remove platform-myself structure ghost points)
@@ -42,9 +42,11 @@ thres_near_removal = 2 # meter (to remove platform-myself structure ghost points
 
 
 #
-scan_dir = data_dir + "Scans"
+scan_dir = data_dir + "ColorizedScans"
 scan_files = os.listdir(scan_dir) 
 scan_files.sort()
+
+scan_idx_range_to_stack = [0, len(scan_files)] # if you want a whole map, use [0, len(scan_files)]
 
 poses = []
 f = open(data_dir+"optimized_poses.txt", 'r')

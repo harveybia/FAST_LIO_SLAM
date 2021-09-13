@@ -34,6 +34,9 @@
 #include <nav_msgs/Path.h>
 #include <geometry_msgs/PoseStamped.h>
 
+#include <image_transport/image_transport.h>
+#include <rosbag/bag.h>
+
 #include <eigen3/Eigen/Dense>
 
 #include <ceres/ceres.h>
@@ -125,12 +128,16 @@ double gpsAltitudeInitOffset = 0.0;
 double recentOptimizedX = 0.0;
 double recentOptimizedY = 0.0;
 
+// thermal images
+sensor_msgs::ImageConstPtr gThermalImage;
+std::mutex mtxThermalImage;
+
 ros::Publisher pubMapAftPGO, pubOdomAftPGO, pubPathAftPGO;
 ros::Publisher pubLoopScanLocal, pubLoopSubmapLocal;
 ros::Publisher pubOdomRepubVerifier;
 
 std::string save_directory;
-std::string pgKITTIformat, pgScansDirectory;
+std::string pgKITTIformat, pgScansDirectory, pgAuxDirectory;
 std::string odomKITTIformat;
 std::fstream pgTimeSaveStream;
 
@@ -186,6 +193,13 @@ void saveOptimizedVerticesKITTIformat(gtsam::Values _estimates, std::string _fil
                << col1.y() << " " << col2.y() << " " << col3.y() << " " << t.y() << " "
                << col1.z() << " " << col2.z() << " " << col3.z() << " " << t.z() << std::endl;
     }
+}
+
+void thermalHandler(const sensor_msgs::ImageConstPtr& msg)
+{
+    mtxThermalImage.lock();
+    gThermalImage = msg;
+    mtxThermalImage.unlock();
 }
 
 void laserOdometryHandler(const nav_msgs::Odometry::ConstPtr &_laserOdometry)
@@ -621,6 +635,12 @@ void process_pg()
             // save utility 
             std::string curr_node_idx_str = padZeros(curr_node_idx);
             pcl::io::savePCDFileBinary(pgScansDirectory + curr_node_idx_str + ".pcd", *thisKeyFrame); // scan 
+            rosbag::Bag bag;
+            bag.open(pgAuxDirectory + curr_node_idx_str + ".bag", rosbag::bagmode::Write);
+            mtxThermalImage.lock();
+            bag.write("/thermal_float", gThermalImage->header.stamp, gThermalImage);
+            mtxThermalImage.unlock();
+            bag.close();
             pgTimeSaveStream << timeLaser << std::endl; // path 
         }
 
@@ -771,6 +791,7 @@ int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "laserPGO");
 	ros::NodeHandle nh;
+    image_transport::ImageTransport it(nh);
 
 	nh.param<std::string>("save_directory", save_directory, "/"); // pose assignment every k m move 
     pgKITTIformat = save_directory + "optimized_poses.txt";
@@ -778,8 +799,11 @@ int main(int argc, char **argv)
     pgTimeSaveStream = std::fstream(save_directory + "times.txt", std::fstream::out); 
     pgTimeSaveStream.precision(std::numeric_limits<double>::max_digits10);
     pgScansDirectory = save_directory + "Scans/";
+    pgAuxDirectory = save_directory + "Aux/";
     auto unused = system((std::string("exec rm -r ") + pgScansDirectory).c_str());
     unused = system((std::string("mkdir -p ") + pgScansDirectory).c_str());
+    unused = system((std::string("exec rm -r ") + pgAuxDirectory).c_str());
+    unused = system((std::string("mkdir -p ") + pgAuxDirectory).c_str());
 
 	nh.param<double>("keyframe_meter_gap", keyframeMeterGap, 2.0); // pose assignment every k m move 
 	nh.param<double>("keyframe_deg_gap", keyframeDegGap, 10.0); // pose assignment every k deg rot 
@@ -805,6 +829,7 @@ int main(int argc, char **argv)
 	nh.param<double>("mapviz_filter_size", mapVizFilterSize, 0.4); // pose assignment every k frames 
     downSizeFilterMapPGO.setLeafSize(mapVizFilterSize, mapVizFilterSize, mapVizFilterSize);
 
+    image_transport::Subscriber subThermalImage = it.subscribe("/thermal_float", 100, thermalHandler);
 	ros::Subscriber subLaserCloudFullRes = nh.subscribe<sensor_msgs::PointCloud2>("/velodyne_cloud_registered_local", 100, laserCloudFullResHandler);
 	ros::Subscriber subLaserOdometry = nh.subscribe<nav_msgs::Odometry>("/aft_mapped_to_init", 100, laserOdometryHandler);
 	ros::Subscriber subGPS = nh.subscribe<sensor_msgs::NavSatFix>("/gps/fix", 100, gpsHandler);
